@@ -11,9 +11,9 @@
     "prettier": "^3.8.1"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
-      "prettier --write",
-      "eslint --fix"
+    "backend/src/**/*.{ts,tsx}": [
+      "cd backend && prettier --write",
+      "cd backend && eslint --fix"
     ]
   },
   "dependencies": {
