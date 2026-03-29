@@ -93,11 +93,11 @@ export class AnalyticsService {
       order: { processedAt: 'DESC' },
     });
 
-    // Mock filtering for the user based on public key in eventData
-    const userEvents = events.filter((event) => {
-      const xdr = JSON.stringify(event.eventData);
-      return xdr.includes(user.publicKey!);
-    });
+  // Improved filtering for the user based on public key in eventData
+const userEvents = events.filter((event) => {
+  const eventData = event.eventData as any;
+  return eventData?.user === user.publicKey;
+});
 
     // 4. Group events by period and calculate net change per period
     const timeline: { date: string; value: number }[] = [];
