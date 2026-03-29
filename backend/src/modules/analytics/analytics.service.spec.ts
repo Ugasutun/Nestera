@@ -17,10 +17,11 @@ describe('AnalyticsService', () => {
   let blockchainSavingsService: { getUserSavingsBalance: jest.Mock };
   let stellarService: { getHorizonServer: jest.Mock };
   let oracleService: {
-    convertXLMToUsd: jest.Mock;
-    convertToUsd: jest.Mock;
-    convertAQUAToUsd: jest.Mock;
-  };
+  convertXLMToUsd: jest.Mock;
+  convertToUsd: jest.Mock;
+  convertAQUAToUsd: jest.Mock;
+  getXLMPrice: jest.Mock;
+};
 
   beforeEach(async () => {
     userRepository = {
@@ -47,6 +48,7 @@ describe('AnalyticsService', () => {
       convertXLMToUsd: jest.fn(),
       convertToUsd: jest.fn(),
       convertAQUAToUsd: jest.fn(),
+        getXLMPrice: jest.fn().mockResolvedValue(0.12),
     };
 
     const module: TestingModule = await Test.createTestingModule({
