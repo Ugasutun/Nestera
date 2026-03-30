@@ -23,6 +23,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums/role.enum';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('admin/savings')
 @Controller('admin/savings')
@@ -62,5 +63,26 @@ export class AdminSavingsController {
     @Body() dto: UpdateProductDto,
   ): Promise<SavingsProduct> {
     return await this.savingsService.updateProduct(id, dto);
+  }
+
+  @Post('products/:id/subscriptions/override')
+  @ApiOperation({
+    summary: 'Create a subscription with admin override for limit checks',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Subscription created with admin override',
+  })
+  async createSubscriptionOverride(
+    @Param('id') id: string,
+    @Body() body: { userId: string; amount: number },
+    @CurrentUser() _admin: { id: string; email: string },
+  ) {
+    return await this.savingsService.subscribe(
+      body.userId,
+      id,
+      body.amount,
+      true,
+    );
   }
 }

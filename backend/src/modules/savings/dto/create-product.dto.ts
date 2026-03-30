@@ -86,6 +86,15 @@ export class CreateProductDto {
   @IsEnum(RiskLevel)
   riskLevel?: RiskLevel;
 
+  @ApiPropertyOptional({
+    example: 3,
+    description: 'Maximum active subscriptions allowed per user',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  maxSubscriptionsPerUser?: number;
+
   @ApiPropertyOptional({ default: true })
   @IsOptional()
   isActive?: boolean;

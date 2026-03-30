@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
   Inject,
 } from '@nestjs/common';
@@ -38,6 +39,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { WaitlistService } from './waitlist.service';
 
 export type SavingsGoalProgress = GoalProgressDto;
 
@@ -72,6 +74,7 @@ export class SavingsService {
     private readonly transactionRepository: Repository<Transaction>,
     private readonly blockchainSavingsService: BlockchainSavingsService,
     private readonly predictiveEvaluatorService: PredictiveEvaluatorService,
+    private readonly waitlistService: WaitlistService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     @Optional() private readonly eventEmitter?: EventEmitter2,
@@ -178,6 +181,7 @@ export class SavingsService {
         tenureMonths: product.tenureMonths,
         contractId: product.contractId,
         isActive: product.isActive,
+        maxSubscriptionsPerUser: product.maxSubscriptionsPerUser,
         riskLevel: product.riskLevel || RiskLevel.LOW,
         tvlAmount,
         createdAt: product.createdAt,
@@ -235,6 +239,7 @@ export class SavingsService {
     userId: string,
     productId: string,
     amount: number,
+    overrideLimits = false,
   ): Promise<UserSubscription> {
     const product = await this.findOneProduct(productId);
     if (!product.isActive) {
@@ -249,6 +254,46 @@ export class SavingsService {
       throw new BadRequestException(
         `Amount must be between ${product.minAmount} and ${product.maxAmount}`,
       );
+    }
+
+    if (!overrideLimits) {
+      const activeSubscriptionsForUser =
+        await this.subscriptionRepository.count({
+          where: {
+            userId,
+            productId: product.id,
+            status: SubscriptionStatus.ACTIVE,
+          },
+        });
+
+      if (
+        product.maxSubscriptionsPerUser != null &&
+        activeSubscriptionsForUser >= product.maxSubscriptionsPerUser
+      ) {
+        throw new ConflictException(
+          `Subscription limit reached. You can only hold ${product.maxSubscriptionsPerUser} active subscriptions for this product.`,
+        );
+      }
+
+      if (product.capacity != null) {
+        const activeSubscriptionsForProduct =
+          await this.subscriptionRepository.count({
+            where: {
+              productId: product.id,
+              status: SubscriptionStatus.ACTIVE,
+            },
+          });
+
+        if (activeSubscriptionsForProduct >= product.capacity) {
+          const { position } = await this.waitlistService.joinWaitlist(
+            userId,
+            product.id,
+          );
+          throw new ConflictException(
+            `This savings product is full. You have been added to the waitlist at position ${position}.`,
+          );
+        }
+      }
     }
 
     const subscription = this.subscriptionRepository.create({

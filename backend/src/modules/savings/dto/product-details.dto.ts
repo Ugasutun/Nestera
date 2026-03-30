@@ -35,6 +35,11 @@ export class ProductDetailsDto {
   @ApiProperty({ description: 'Whether product is active' })
   isActive: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Maximum active subscriptions allowed per user',
+  })
+  maxSubscriptionsPerUser: number | null;
+
   @ApiPropertyOptional({ description: 'Soroban vault contract ID' })
   contractId: string | null;
 

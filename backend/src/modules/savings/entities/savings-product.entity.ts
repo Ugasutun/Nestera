@@ -54,6 +54,9 @@ export class SavingsProduct {
   @Column('int', { nullable: true })
   capacity: number | null;
 
+  @Column('int', { nullable: true })
+  maxSubscriptionsPerUser: number | null;
+
   @Column({ default: true })
   isActive: boolean;
 

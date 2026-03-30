@@ -35,6 +35,11 @@ export class SavingsProductDto {
   @ApiProperty({ description: 'Whether product is active' })
   isActive: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Maximum active subscriptions allowed per user',
+  })
+  maxSubscriptionsPerUser: number | null;
+
   @ApiProperty({
     description: 'Risk level classification (e.g. Low, Medium, High)',
     enum: RiskLevel,

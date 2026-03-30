@@ -107,6 +107,7 @@ export class SavingsController {
       minAmount: product.minAmount,
       maxAmount: product.maxAmount,
       tenureMonths: product.tenureMonths,
+      maxSubscriptionsPerUser: product.maxSubscriptionsPerUser,
       isActive: product.isActive,
       contractId: product.contractId,
       totalAssets,
