@@ -6,6 +6,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { CorrelationIdInterceptor } from './common/interceptors/correlation-id.interceptor';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
+import { GracefulShutdownInterceptor } from './common/interceptors/graceful-shutdown.interceptor';
 import { TieredThrottlerGuard } from './common/guards/tiered-throttler.guard';
 import { CommonModule } from './common/common.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -34,6 +35,7 @@ import { SavingsModule } from './modules/savings/savings.module';
 import { GovernanceModule } from './modules/governance/governance.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
 import { TestRbacModule } from './test-rbac/test-rbac.module';
 import { TestThrottlingModule } from './test-throttling/test-throttling.module';
 import { ApiVersioningModule } from './common/versioning/api-versioning.module';
@@ -42,6 +44,8 @@ import { ConnectionPoolModule } from './common/database/connection-pool.module';
 import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
 import { PostmanModule } from './common/postman/postman.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { PerformanceModule } from './modules/performance/performance.module';
+import { GracefulShutdownService } from './common/services/graceful-shutdown.service';
 
 const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production', 'test').required(),
@@ -191,6 +195,7 @@ const envValidationSchema = Joi.object({
     GovernanceModule,
     NotificationsModule,
     TransactionsModule,
+    ReferralsModule,
     TestRbacModule,
     TestThrottlingModule,
     ApiVersioningModule,
@@ -198,6 +203,7 @@ const envValidationSchema = Joi.object({
     ConnectionPoolModule,
     CircuitBreakerModule,
     PostmanModule,
+    PerformanceModule,
     CommonModule,
     ThrottlerModule.forRoot([
       {
@@ -220,6 +226,7 @@ const envValidationSchema = Joi.object({
   controllers: [AppController],
   providers: [
     AppService,
+    GracefulShutdownService,
     {
       provide: APP_GUARD,
       useClass: TieredThrottlerGuard,
@@ -235,6 +242,10 @@ const envValidationSchema = Joi.object({
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditLogInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: GracefulShutdownInterceptor,
     },
   ],
 })

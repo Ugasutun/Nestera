@@ -1,21 +1,40 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { UserModule } from '../user/user.module';
 import { SavingsModule } from '../savings/savings.module';
 import { MailModule } from '../mail/mail.module';
 import { BlockchainModule } from '../blockchain/blockchain.module';
 import { CircuitBreakerModule } from '../../common/circuit-breaker/circuit-breaker.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminController } from './admin.controller';
 import { AdminSavingsController } from './admin-savings.controller';
 import { AdminWaitlistController } from './admin-waitlist.controller';
 import { AdminUsersController } from './admin-users.controller';
 import { CircuitBreakerController } from './circuit-breaker.controller';
+import { AdminDisputesController } from './admin-disputes.controller';
+import { AdminAuditLogsController } from './admin-audit-logs.controller';
+import { AdminNotificationsController } from './admin-notifications.controller';
+
+import { AdminTransactionsController } from './admin-transactions.controller';
+
 import { AdminUsersService } from './admin-users.service';
 import { AdminSavingsService } from './admin-savings.service';
+import { AdminDisputesService } from './admin-disputes.service';
+import { AdminAuditLogsService } from './admin-audit-logs.service';
+import { AdminNotificationsService } from './admin-notifications.service';
+import { AdminTransactionsService } from './admin-transactions.service';
+import { AdminTransactionNote } from './entities/admin-transaction-note.entity';
 import { User } from '../user/entities/user.entity';
 import { UserSubscription } from '../savings/entities/user-subscription.entity';
 import { SavingsProduct } from '../savings/entities/savings-product.entity';
 import { LedgerTransaction } from '../blockchain/entities/transaction.entity';
+import { Transaction } from '../transactions/entities/transaction.entity';
+import { Dispute, DisputeTimeline } from '../disputes/entities/dispute.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AuditLog } from '../../common/entities/audit-log.entity';
+import { Notification } from '../notifications/entities/notification.entity';
 
 @Module({
   imports: [
@@ -24,12 +43,20 @@ import { LedgerTransaction } from '../blockchain/entities/transaction.entity';
       UserSubscription,
       SavingsProduct,
       LedgerTransaction,
+      Transaction,
+      AdminTransactionNote,
+      Dispute,
+      DisputeTimeline,
+      AuditLog,
+      Notification,
     ]),
     UserModule,
     SavingsModule,
     MailModule,
     BlockchainModule,
     CircuitBreakerModule,
+    NotificationsModule,
+    EventEmitterModule,
   ],
   controllers: [
     AdminController,
@@ -37,7 +64,19 @@ import { LedgerTransaction } from '../blockchain/entities/transaction.entity';
     AdminWaitlistController,
     AdminUsersController,
     CircuitBreakerController,
+    AdminDisputesController,
+    AdminAuditLogsController,
+    AdminNotificationsController,
+    AdminTransactionsController,
   ],
-  providers: [AdminUsersService, AdminSavingsService],
+  providers: [
+    AdminUsersService,
+    AdminSavingsService,
+    AdminDisputesService,
+    AdminAuditLogsService,
+    AdminNotificationsService,
+    AdminTransactionsService,
+  ],
+  exports: [AdminDisputesService, AdminAuditLogsService],
 })
 export class AdminModule {}

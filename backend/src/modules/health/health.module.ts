@@ -6,6 +6,13 @@ import { TypeOrmHealthIndicator } from './indicators/typeorm.health';
 import { IndexerHealthIndicator } from './indicators/indexer.health';
 import { RpcHealthIndicator } from './indicators/rpc.health';
 import { ConnectionPoolHealthIndicator } from './indicators/connection-pool.health';
+import {
+  RedisHealthIndicator,
+  EmailServiceHealthIndicator,
+  SorobanRpcHealthIndicator,
+  HorizonHealthIndicator,
+} from './indicators/external-services.health';
+import { HealthHistoryService } from './health-history.service';
 import { BlockchainModule } from '../blockchain/blockchain.module';
 import { ConnectionPoolModule } from '../../common/database/connection-pool.module';
 import { DeadLetterEvent } from '../blockchain/entities/dead-letter-event.entity';
@@ -23,6 +30,12 @@ import { DeadLetterEvent } from '../blockchain/entities/dead-letter-event.entity
     IndexerHealthIndicator,
     RpcHealthIndicator,
     ConnectionPoolHealthIndicator,
+    RedisHealthIndicator,
+    EmailServiceHealthIndicator,
+    SorobanRpcHealthIndicator,
+    HorizonHealthIndicator,
+    HealthHistoryService,
   ],
+  exports: [HealthHistoryService],
 })
 export class HealthModule {}
