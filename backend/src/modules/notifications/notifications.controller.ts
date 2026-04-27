@@ -192,6 +192,9 @@ export class NotificationsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 400, description: 'Invalid preference data' })
   @ApiResponse({ status: 429, description: 'Too many requests' })
+    summary:
+      'Update notification preferences (channels, types, quiet hours, digest)',
+  })
   async updatePreferences(
     @CurrentUser() user: User,
     @Body() updateDto: UpdateNotificationPreferenceDto,

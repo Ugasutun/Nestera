@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SavingsProductType } from '../entities/savings-product.entity';
+import {
+  SavingsProductType,
+  RiskLevel,
+} from '../entities/savings-product.entity';
 
 /**
  * Detailed product response combining static DB attributes with live Soroban contract data
@@ -67,6 +70,13 @@ export class ProductDetailsDto {
     nullable: true,
     example: 'CDLZFC3T7B4G4H5H3H4G5H6G7H8G9H0G1H2I3J4K5L6M7N',
   })
+    description: 'Maximum active subscriptions allowed per user',
+  })
+  maxSubscriptionsPerUser: number | null;
+  @ApiProperty({ description: 'Current product version' })
+  version: number;
+
+  @ApiPropertyOptional({ description: 'Soroban vault contract ID' })
   contractId: string | null;
 
   @ApiProperty({
@@ -93,6 +103,28 @@ export class ProductDetailsDto {
     example: 'Low',
   })
   riskLevel: string;
+  @ApiPropertyOptional({
+    description: 'Maximum liquidity-backed capacity for the product',
+  })
+  maxCapacity: number | null;
+
+  @ApiProperty({ description: 'Current utilized capacity amount' })
+  utilizedCapacity: number;
+
+  @ApiProperty({ description: 'Remaining capacity amount' })
+  availableCapacity: number;
+
+  @ApiProperty({ description: 'Capacity utilization percentage' })
+  utilizationPercentage: number;
+
+  @ApiProperty({ description: 'Whether the product is fully utilized' })
+  isFull: boolean;
+
+  @ApiProperty({ description: 'Product creation timestamp' })
+  createdAt: Date;
+
+  @ApiProperty({ description: 'Risk level classification', enum: RiskLevel })
+  riskLevel: RiskLevel;
 
   @ApiProperty({
     description: 'Product last update timestamp',

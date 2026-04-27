@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SavingsProductType } from '../entities/savings-product.entity';
+import {
+  SavingsProductType,
+  RiskLevel,
+} from '../entities/savings-product.entity';
 
 export class SavingsProductDto {
   @ApiProperty({
@@ -66,11 +69,20 @@ export class SavingsProductDto {
   })
   isActive: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Maximum active subscriptions allowed per user',
+  })
+  maxSubscriptionsPerUser: number | null;
+  @ApiProperty({ description: 'Current product version' })
+  version: number;
+
   @ApiProperty({
     description: 'Risk level classification (e.g., Low, Medium, High)',
     example: 'Low',
+    description: 'Risk level classification (e.g. Low, Medium, High)',
+    enum: RiskLevel,
   })
-  riskLevel: string;
+  riskLevel: RiskLevel;
 
   @ApiProperty({
     description: 'Total Value Locked (aggregated local balance in XLM)',
@@ -83,6 +95,21 @@ export class SavingsProductDto {
     type: Date,
     example: '2025-01-15T10:00:00Z',
   })
+  @ApiPropertyOptional({
+    description: 'Maximum liquidity-backed capacity for the product',
+  })
+  maxCapacity: number | null;
+
+  @ApiProperty({ description: 'Current utilized capacity amount' })
+  utilizedCapacity: number;
+
+  @ApiProperty({ description: 'Remaining capacity amount' })
+  availableCapacity: number;
+
+  @ApiProperty({ description: 'Capacity utilization percentage' })
+  utilizationPercentage: number;
+
+  @ApiProperty({ description: 'Product creation timestamp' })
   createdAt: Date;
 
   @ApiProperty({

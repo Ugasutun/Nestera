@@ -1,6 +1,7 @@
-import { IsEmail, IsString, MinLength, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsString, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsStellarPublicKey } from '../../common/validators/is-stellar-key.validator';
+import { IsStrongPassword } from '../../common/validators/is-strong-password.validator';
 
 export class RegisterDto {
   @ApiProperty({
@@ -15,10 +16,13 @@ export class RegisterDto {
     description: 'User password (min 8 characters)',
     minLength: 8,
     maxLength: 32,
+    example: 'MyP@ssw0rd!',
+    description:
+      'Must be 8-72 characters and contain at least one uppercase letter, ' +
+      'one lowercase letter, one digit, and one special character.',
   })
   @IsString()
-  @MinLength(8)
-  @MaxLength(32)
+  @IsStrongPassword()
   password: string;
 
   @ApiProperty({
@@ -28,6 +32,14 @@ export class RegisterDto {
   })
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({
+    example: 'ABC12345',
+    description: 'Referral code from another user',
+  })
+  @IsOptional()
+  @IsString()
+  referralCode?: string;
 }
 
 export class LoginDto {

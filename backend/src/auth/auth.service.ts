@@ -3,6 +3,9 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  Inject,
+  forwardRef,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../modules/user/user.service';
@@ -12,18 +15,27 @@ import {
   VerifySignatureDto,
   LinkWalletDto,
 } from './dto/auth.dto';
-// import { Cache } from 'cache-manager';
-// import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuthRateLimitService } from './services/auth-rate-limit.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private readonly NONCE_TTL = 300000; // 5 minutes in milliseconds
+  private readonly RATE_LIMIT_WINDOW = 900000; // 15 minutes in milliseconds
+  private readonly MAX_NONCE_REQUESTS = 5; // Max requests per window
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
-    // @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private readonly eventEmitter: EventEmitter2,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private readonly authRateLimitService: AuthRateLimitService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -38,20 +50,54 @@ export class AuthService {
       password: hashedPassword,
     });
 
+    // Apply referral code if provided
+    if (dto.referralCode) {
+      this.eventEmitter.emit('user.signup-with-referral', {
+        userId: user.id,
+        referralCode: dto.referralCode,
+      });
+    }
+
     return {
       user,
       accessToken: this.generateToken(user.id, user.email, user.role),
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ip?: string) {
     const user = await this.validateUser(dto.email, dto.password);
     if (!user) {
+      // Record failed attempt
+      if (ip) {
+        await this.authRateLimitService.recordFailedAttempt(
+          dto.email,
+          ip,
+          'invalid_credentials',
+        );
+      }
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Clear failed attempts on successful login
+    await this.authRateLimitService.clearFailedAttempts(dto.email);
+
+    // Check if 2FA is enabled
+    const fullUser = await this.userService.findByEmail(dto.email);
+    if (fullUser?.twoFactorEnabled) {
+      return {
+        requiresTwoFactor: true,
+        userId: user.id,
+        message: 'Please provide your 2FA token',
+      };
+    }
+
     return {
-      accessToken: this.generateToken(user.id, user.email, user.role),
+      accessToken: this.generateToken(
+        user.id,
+        user.email,
+        user.role,
+        user.kycStatus,
+      ),
     };
   }
 
@@ -64,8 +110,13 @@ export class AuthService {
     return null;
   }
 
-  private generateToken(userId: string, email: string, role = 'USER') {
-    return this.jwtService.sign({ sub: userId, email, role });
+  private generateToken(
+    userId: string,
+    email: string,
+    role = 'USER',
+    kycStatus = 'NOT_SUBMITTED',
+  ) {
+    return this.jwtService.sign({ sub: userId, email, role, kycStatus });
   }
 
   async generateNonce(publicKey: string): Promise<{ nonce: string }> {
@@ -74,15 +125,42 @@ export class AuthService {
       throw new BadRequestException('Invalid Stellar public key format');
     }
 
+    // Implement rate limiting per public key
+    const rateLimitKey = `nonce:ratelimit:${publicKey}`;
+    const requestCount = await this.cacheManager.get<number>(rateLimitKey);
+
+    if (requestCount && requestCount >= this.MAX_NONCE_REQUESTS) {
+      this.logger.warn(
+        `Rate limit exceeded for public key: ${publicKey.substring(0, 10)}...`,
+      );
+      throw new UnauthorizedException(
+        `Too many nonce requests. Maximum ${this.MAX_NONCE_REQUESTS} requests per 15 minutes allowed.`,
+      );
+    }
+
+    // Increment rate limit counter
+    const newCount = (requestCount || 0) + 1;
+    await this.cacheManager.set(rateLimitKey, newCount, this.RATE_LIMIT_WINDOW);
+
+    // Generate nonce with timestamp for additional validation
     const nonce = randomUUID();
-    // const cacheKey = `nonce:${publicKey}`;
-    // await this.cacheManager.set(cacheKey, nonce, 300000); // 300 seconds = 5 minutes
+    const timestamp = Date.now();
+    const nonceData = { nonce, timestamp };
+
+    // Store nonce in cache with TTL
+    const cacheKey = `nonce:${publicKey}`;
+    await this.cacheManager.set(cacheKey, nonceData, this.NONCE_TTL);
+
+    this.logger.debug(
+      `Nonce generated for public key: ${publicKey.substring(0, 10)}... (TTL: ${this.NONCE_TTL}ms)`,
+    );
 
     return { nonce };
   }
 
   async verifySignature(
     dto: VerifySignatureDto,
+    ip?: string,
   ): Promise<{ accessToken: string }> {
     const { publicKey, signature, nonce } = dto;
 
@@ -91,30 +169,92 @@ export class AuthService {
       throw new BadRequestException('Invalid Stellar public key format');
     }
 
-    // Retrieve stored nonce
-    // const cacheKey = `nonce:${publicKey}`;
-    // const storedNonce = await this.cacheManager.get<string>(cacheKey);
-    const storedNonce = nonce; // Temporarily bypass cache for testing
+    // Retrieve and atomically consume nonce
+    const cacheKey = `nonce:${publicKey}`;
+    const storedNonceData = await this.cacheManager.get<{
+      nonce: string;
+      timestamp: number;
+    }>(cacheKey);
 
-    if (!storedNonce) {
+    if (!storedNonceData) {
+      this.logger.warn(
+        `Nonce not found or expired for public key: ${publicKey.substring(0, 10)}...`,
+      );
+      if (ip) {
+        await this.authRateLimitService.recordFailedAttempt(
+          publicKey,
+          ip,
+          'nonce_mismatch',
+        );
+      }
       throw new UnauthorizedException(
         'Nonce not found or expired. Request a new nonce.',
       );
+    }
+
+    // Validate nonce timestamp (additional security layer)
+    const nonceAge = Date.now() - storedNonceData.timestamp;
+    if (nonceAge > this.NONCE_TTL) {
+      await this.cacheManager.del(cacheKey);
+      this.logger.warn(
+        `Expired nonce used for public key: ${publicKey.substring(0, 10)}...`,
+      );
+      if (ip) {
+        await this.authRateLimitService.recordFailedAttempt(
+          publicKey,
+          ip,
+          'nonce_mismatch',
+        );
+      }
+      throw new UnauthorizedException(
+        'Nonce has expired. Request a new nonce.',
+      );
+    }
+
+    // Verify nonce matches
+    if (storedNonceData.nonce !== nonce) {
+      this.logger.warn(
+        `Nonce mismatch for public key: ${publicKey.substring(0, 10)}...`,
+      );
+      if (ip) {
+        await this.authRateLimitService.recordFailedAttempt(
+          publicKey,
+          ip,
+          'nonce_mismatch',
+        );
+      }
+      throw new UnauthorizedException('Nonce mismatch');
     }
 
     // Verify signature
     const isValidSignature = this.verifyWalletSignature(
       publicKey,
       signature,
-      storedNonce,
+      storedNonceData.nonce,
     );
 
     if (!isValidSignature) {
+      this.logger.warn(
+        `Invalid signature for public key: ${publicKey.substring(0, 10)}...`,
+      );
+      if (ip) {
+        await this.authRateLimitService.recordFailedAttempt(
+          publicKey,
+          ip,
+          'invalid_signature',
+        );
+      }
       throw new UnauthorizedException('Invalid signature');
     }
 
-    // Consume the nonce (delete it)
-    // await this.cacheManager.del(cacheKey);
+    // Atomically consume the nonce (delete it immediately after successful verification)
+    await this.cacheManager.del(cacheKey);
+    this.logger.debug(
+      `Nonce consumed for public key: ${publicKey.substring(0, 10)}...`,
+    );
+
+    // Clear failed attempts on successful verification
+    await this.authRateLimitService.clearFailedAttempts(publicKey);
 
     // Find or create user by public key
     let user = await this.userService.findByPublicKey(publicKey);
@@ -126,6 +266,9 @@ export class AuthService {
         email: `${publicKey.substring(0, 10)}@stellar.wallet`,
         name: `Stellar Wallet User`,
       });
+      this.logger.log(
+        `New user created with public key: ${publicKey.substring(0, 10)}...`,
+      );
     }
 
     return {
@@ -143,7 +286,7 @@ export class AuthService {
    *
    * The method:
    *  - Validates the Stellar key format
-   *  - Verifies the Ed25519 signature (same logic as verifySignature)
+   *  - Verifies the Ed25519 signature with proper nonce validation
    *  - Delegates to UserService.linkWallet, which enforces uniqueness at the DB row level
    *
    * @param userId   Extracted from the verified JWT by JwtAuthGuard
@@ -160,19 +303,72 @@ export class AuthService {
       throw new BadRequestException('Invalid Stellar public key format');
     }
 
-    // 2. Verify the Ed25519 signature over the nonce
+    // 2. Retrieve and validate stored nonce
+    const cacheKey = `nonce:${publicKey}`;
+    const storedNonceData = await this.cacheManager.get<{
+      nonce: string;
+      timestamp: number;
+    }>(cacheKey);
+
+    if (!storedNonceData) {
+      this.logger.warn(
+        `Nonce not found for wallet linking: ${publicKey.substring(0, 10)}...`,
+      );
+      throw new UnauthorizedException(
+        'Nonce not found or expired. Request a new nonce.',
+      );
+    }
+
+    // Validate nonce timestamp
+    const nonceAge = Date.now() - storedNonceData.timestamp;
+    if (nonceAge > this.NONCE_TTL) {
+      await this.cacheManager.del(cacheKey);
+      this.logger.warn(
+        `Expired nonce used for wallet linking: ${publicKey.substring(0, 10)}...`,
+      );
+      throw new UnauthorizedException(
+        'Nonce has expired. Request a new nonce.',
+      );
+    }
+
+    // Verify nonce matches
+    if (storedNonceData.nonce !== nonce) {
+      this.logger.warn(
+        `Nonce mismatch for wallet linking: ${publicKey.substring(0, 10)}...`,
+      );
+      throw new UnauthorizedException('Nonce mismatch');
+    }
+
+    // 3. Verify the Ed25519 signature over the nonce
     //    This proves the caller controls the private key behind publicKey.
-    const isValid = this.verifyWalletSignature(publicKey, signature, nonce);
+    const isValid = this.verifyWalletSignature(
+      publicKey,
+      signature,
+      storedNonceData.nonce,
+    );
     if (!isValid) {
+      this.logger.warn(
+        `Invalid signature for wallet linking: ${publicKey.substring(0, 10)}...`,
+      );
       throw new UnauthorizedException(
         'Signature verification failed. Ensure you signed the exact nonce bytes.',
       );
     }
 
-    // 3. Persist the link; UserService throws ConflictException on duplicates
+    // Atomically consume the nonce
+    await this.cacheManager.del(cacheKey);
+    this.logger.debug(
+      `Nonce consumed for wallet linking: ${publicKey.substring(0, 10)}...`,
+    );
+
+    // 4. Persist the link; UserService throws ConflictException on duplicates
     const updatedUser = await this.userService.linkWalletAddress(
       userId,
       publicKey,
+    );
+
+    this.logger.log(
+      `Wallet linked successfully for user ${userId}: ${publicKey.substring(0, 10)}...`,
     );
 
     return {
