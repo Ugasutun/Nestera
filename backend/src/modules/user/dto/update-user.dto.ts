@@ -1,5 +1,7 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, MaxLength, IsDate } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class UpdateUserDto {
   @ApiProperty({
@@ -21,6 +23,11 @@ export class UpdateUserDto {
   @IsString()
   @MaxLength(500)
   bio?: string;
+
+  @IsOptional()
+  @IsDate()
+  @Type(() => Date)
+  lastLoginAt?: Date;
 }
 
 export class ApproveKycDto {

@@ -40,6 +40,16 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   referralCode?: string;
+
+  @ApiPropertyOptional({ example: 'device-123', description: 'Device identifier' })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+
+  @ApiPropertyOptional({ example: 'My Phone', description: 'Device name' })
+  @IsOptional()
+  @IsString()
+  deviceName?: string;
 }
 
 export class LoginDto {
@@ -56,6 +66,16 @@ export class LoginDto {
   })
   @IsString()
   password: string;
+
+  @ApiPropertyOptional({ example: 'device-123', description: 'Device identifier' })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+
+  @ApiPropertyOptional({ example: 'My Phone', description: 'Device name' })
+  @IsOptional()
+  @IsString()
+  deviceName?: string;
 }
 
 export class GetNonceDto {
@@ -88,6 +108,17 @@ export class VerifySignatureDto {
   })
   @IsString()
   nonce: string;
+}
+
+export class RefreshTokenDto {
+  @ApiProperty({ description: 'Refresh token' })
+  @IsString()
+  token: string;
+
+  @ApiPropertyOptional({ example: 'device-123', description: 'Device identifier' })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }
 
 /**
