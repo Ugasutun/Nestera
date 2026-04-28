@@ -33,6 +33,7 @@ import { LedgerTransaction } from '../blockchain/entities/transaction.entity';
 
 /** Timelock duration in milliseconds (24 hours) */
 const TIMELOCK_DURATION_MS = 24 * 60 * 60 * 1000;
+const STROOPS_PER_TOKEN = 10_000_000;
 
 @Injectable()
 export class GovernanceService {
@@ -427,11 +428,31 @@ export class GovernanceService {
     if (!proposal.timelockEndsAt || new Date() < proposal.timelockEndsAt) {
       throw new BadRequestException('Timelock period has not elapsed yet');
     }
+
+    let executionResult: { hash: string; status: string };
+    try {
+      executionResult = await this.executeProposalOnChain(proposal);
+    } catch (error) {
+      this.eventEmitter.emit('governance.proposal.execution_failed', {
+        proposalId: proposal.id,
+        onChainId: proposal.onChainId,
+        executedByUserId: userId,
+        reason: (error as Error).message,
+      });
+      throw new ServiceUnavailableException(
+        `Failed to execute proposal on-chain: ${(error as Error).message}`,
+      );
+    }
+
     proposal.status = ProposalStatus.EXECUTED;
     proposal.executedAt = new Date();
     const saved = await this.proposalRepo.save(proposal);
     this.eventEmitter.emit('governance.proposal.executed', {
       proposalId: saved.id,
+      onChainId: saved.onChainId,
+      executedByUserId: userId,
+      transactionHash: executionResult.hash,
+      transactionStatus: executionResult.status,
     });
     const currentLedger = await this.getCurrentLedger();
     return this.toProposalResponse(saved, currentLedger);
@@ -879,5 +900,103 @@ export class GovernanceService {
     }
 
     return this.readRequiredPositiveInteger(value, key);
+  }
+
+  private async executeProposalOnChain(
+    proposal: GovernanceProposal,
+  ): Promise<{ hash: string; status: string }> {
+    if (!proposal.type || !proposal.action) {
+      throw new BadRequestException('Proposal does not define executable action');
+    }
+
+    const executorSecretKey = process.env.GOVERNANCE_EXECUTOR_SECRET_KEY;
+    if (!executorSecretKey) {
+      throw new Error('GOVERNANCE_EXECUTOR_SECRET_KEY is not configured');
+    }
+
+    switch (proposal.type) {
+      case ProposalType.RATE_CHANGE: {
+        const contractId = this.resolveContractId(
+          'GOVERNANCE_EXECUTION_CONTRACT_ID',
+          'CONTRACT_ID',
+        );
+        const method = process.env.GOVERNANCE_RATE_CHANGE_METHOD ?? 'set_rate';
+        const target = this.readRequiredString(proposal.action, 'target');
+        const newValue = this.readRequiredPositiveNumber(
+          proposal.action,
+          'newValue',
+        );
+        const duration = this.readOptionalPositiveInteger(
+          proposal.action,
+          'duration',
+        );
+        const args = [target, newValue, ...(duration ? [duration] : [])];
+        return this.stellarService.invokeContractWrite(
+          contractId,
+          method,
+          executorSecretKey,
+          args,
+        );
+      }
+
+      case ProposalType.TREASURY_ALLOCATION: {
+        const contractId = this.resolveContractId(
+          'GOVERNANCE_TREASURY_CONTRACT_ID',
+          'GOVERNANCE_EXECUTION_CONTRACT_ID',
+          'CONTRACT_ID',
+        );
+        const method = process.env.GOVERNANCE_TREASURY_TRANSFER_METHOD ?? 'transfer';
+        const recipient = this.readRequiredString(proposal.action, 'recipient');
+        const amount = this.readRequiredPositiveNumber(proposal.action, 'amount');
+        const amountStroops = Math.round(amount * STROOPS_PER_TOKEN);
+        const asset = this.readOptionalString(proposal.action, 'asset') ?? 'NST';
+        return this.stellarService.invokeContractWrite(
+          contractId,
+          method,
+          executorSecretKey,
+          [recipient, amountStroops, asset],
+        );
+      }
+
+      case ProposalType.PAUSE: {
+        const contractId = this.resolveContractId(
+          'GOVERNANCE_EXECUTION_CONTRACT_ID',
+          'CONTRACT_ID',
+        );
+        const method = process.env.GOVERNANCE_PAUSE_METHOD ?? 'pause';
+        return this.stellarService.invokeContractWrite(
+          contractId,
+          method,
+          executorSecretKey,
+        );
+      }
+
+      case ProposalType.UNPAUSE: {
+        const contractId = this.resolveContractId(
+          'GOVERNANCE_EXECUTION_CONTRACT_ID',
+          'CONTRACT_ID',
+        );
+        const method = process.env.GOVERNANCE_UNPAUSE_METHOD ?? 'unpause';
+        return this.stellarService.invokeContractWrite(
+          contractId,
+          method,
+          executorSecretKey,
+        );
+      }
+
+      default:
+        throw new BadRequestException('Unsupported proposal type');
+    }
+  }
+
+  private resolveContractId(...envKeys: string[]): string {
+    for (const envKey of envKeys) {
+      const value = process.env[envKey];
+      if (value && value.trim().length > 0) {
+        return value;
+      }
+    }
+
+    throw new Error(`${envKeys.join(' or ')} is not configured`);
   }
 }
